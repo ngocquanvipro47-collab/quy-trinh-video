@@ -1,0 +1,4 @@
+# Chi can cai file nay neu dung che do CLONE giong bang XTTS (Buoc 3).
+# Goi nay nang (kem PyTorch ~2-3 GB) va chay on dinh nhat tren Python 3.10 / 3.11.
+# Khong cai thi cac che do giong khac (Edge TTS, ElevenLabs) van chay binh thuong.
+coqui-tts>=0.24

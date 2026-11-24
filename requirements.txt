@@ -1,0 +1,5 @@
+faster-whisper>=1.0
+av>=11,<14
+gradio>=4.0
+yt-dlp>=2024.8
+edge-tts>=6.1
