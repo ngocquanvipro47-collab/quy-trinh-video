@@ -18,7 +18,7 @@ from projects import (clear_session, has_content, list_projects, list_voice_prof
                       load_project, load_session, load_voice_profile, save_project,
                       save_session, save_voice_profile)
 from updater import LOCAL_VERSION, check_update, do_update
-from clone_tts import XTTS_LANGS, elevenlabs_tts, f5_clone, xtts_clone
+from clone_tts import XTTS_LANGS, elevenlabs_tts, f5_clone, vieneu_clone, xtts_clone
 from engine import transcribe_to_srt
 from tts import VOICE_CHOICES, make_voice
 from youtube_script import clean_error, fetch_youtube_script
@@ -41,12 +41,13 @@ def step1_fetch(url, src_lang, use_cookies):
 
 
 def step3_voice(script, mode, voice, speed, sample, clone_lang, el_key, el_voice_id,
-                f5_sample=None, f5_ref_text="", f5_name=""):
+                f5_sample=None, f5_ref_text="", f5_name="", vn_sample=None, vn_name=""):
     try:
         if mode == "edge":
             out = os.path.join(OUT_DIR, "voice.mp3")
             make_voice(script, voice=voice, speed_percent=int(speed), out_path=out)
-            return "ĐÃ TẠO XONG VOICE (giọng có sẵn)! Nghe thử bên dưới, rồi sang thẻ 3.", out, gr.update()
+            return ("ĐÃ TẠO XONG VOICE (giọng có sẵn)! Nghe thử bên dưới, rồi sang thẻ 3.",
+                    out, gr.update(), gr.update())
         if mode == "f5vi":
             out = os.path.join(OUT_DIR, "voice_f5.wav")
             out, used_ref = f5_clone(script, f5_sample, ref_text=f5_ref_text or "",
@@ -60,17 +61,31 @@ def step3_voice(script, mode, voice, speed, sample, clone_lang, el_key, el_voice
                 msg += f" Đã LƯU giọng này vào kho giọng với tên '{used_name}' — lần sau chỉ cần chọn lại ở mục Giọng đã lưu."
             except Exception:
                 pass
-            return msg, out, upd
+            return msg, out, upd, upd
+        if mode == "vieneu":
+            out = os.path.join(OUT_DIR, "voice_vieneu.wav")
+            vieneu_clone(script, vn_sample, out_path=out)
+            msg = ("ĐÃ CLONE XONG VOICE TIẾNG VIỆT BẰNG VieNeu v3 Turbo! Nghe thử bên dưới, "
+                   "rồi sang thẻ 3. (VieNeu giấy phép Apache-2.0 — dùng cho kênh kiếm tiền được.)")
+            upd = gr.update()
+            try:  # Cung kho giong voi F5: clone bang engine nao cung luu lai duoc
+                used_name = save_voice_profile(vn_name, vn_sample, "")
+                upd = gr.update(choices=list_voice_profiles(), value=used_name)
+                msg += f" Đã LƯU giọng này vào kho giọng với tên '{used_name}'."
+            except Exception:
+                pass
+            return msg, out, upd, upd
         if mode == "xtts":
             out = os.path.join(OUT_DIR, "voice_clone.wav")
             xtts_clone(script, sample, language=clone_lang, out_path=out)
             return ("ĐÃ CLONE XONG VOICE BẰNG XTTS! Lần đầu chạy sẽ tải model khoảng 1,8 GB. "
-                    "Nghe thử bên dưới, rồi sang thẻ 3."), out, gr.update()
+                    "Nghe thử bên dưới, rồi sang thẻ 3."), out, gr.update(), gr.update()
         out = os.path.join(OUT_DIR, "voice_elevenlabs.mp3")
         elevenlabs_tts(script, (el_key or "").strip(), (el_voice_id or "").strip(), out_path=out)
-        return "ĐÃ TẠO XONG VOICE BẰNG GIỌNG CLONE ELEVENLABS! Nghe thử bên dưới, rồi sang thẻ 3.", out, gr.update()
+        return ("ĐÃ TẠO XONG VOICE BẰNG GIỌNG CLONE ELEVENLABS! Nghe thử bên dưới, rồi sang thẻ 3.",
+                out, gr.update(), gr.update())
     except Exception as e:
-        return f"CÓ LỖI: {e}", None, gr.update()
+        return f"CÓ LỖI: {e}", None, gr.update(), gr.update()
 
 
 def step4_srt(voice_file, model_size, max_chars):
@@ -230,6 +245,7 @@ with gr.Blocks(title="Quy trình Video",
         with gr.Tab("2 · Tạo voice"):
             mode_dd = gr.Dropdown(
                 choices=[("Giọng có sẵn - miễn phí (Edge TTS)", "edge"),
+                         ("Clone VieNeu v3 Turbo TIẾNG VIỆT - NHANH, chạy CPU, miễn phí (Apache - dùng thương mại được)", "vieneu"),
                          ("Clone F5-TTS TIẾNG VIỆT - offline, miễn phí (giấy phép phi thương mại)", "f5vi"),
                          ("Clone XTTS - offline (Anh/Nhật/Hàn/Đức... không có tiếng Việt)", "xtts"),
                          ("Clone ElevenLabs - trả phí (có tiếng Việt, chuẩn nhất)", "eleven")],
@@ -256,6 +272,19 @@ with gr.Blocks(title="Quy trình Video",
                             "thư viện F5-TTS giúp bạn (~2-3 GB, cần mạng, chờ vài phút — xem tiến trình ở "
                             "cửa sổ đen của tool, đừng tắt) rồi tự tải model tiếng Việt ~1,35 GB. Giấy phép "
                             "model là phi thương mại — chỉ clone giọng của bạn hoặc người đã đồng ý._")
+            with gr.Group(visible=S.get("mode") == "vieneu") as grp_vn:
+                with gr.Row():
+                    vn_saved = gr.Dropdown(choices=list_voice_profiles(),
+                                           label="Giọng đã clone đã lưu (dùng chung kho giọng với F5)", scale=2)
+                    vn_name = gr.Textbox(label="Tên giọng (để lưu vào kho giọng)",
+                                         placeholder="VD: Giọng Nhung bản tin", scale=2)
+                    btn_save_voice_vn = gr.Button("💾 Lưu giọng", size="sm", scale=1)
+                vn_sample = gr.File(label="File giọng mẫu tiếng Việt 3-15 giây (1 người nói — VieNeu tự cắt còn 8 giây và tự khử nhiễu, KHÔNG cần gõ lời thoại mẫu)",
+                                    file_types=["audio", ".mp3", ".wav", ".m4a"])
+                gr.Markdown("_VieNeu v3 Turbo chạy ngay trên CPU bằng ONNX — nhanh hơn thời gian thực, "
+                            "KHÔNG cần card đồ họa, cài nhẹ. Lần đầu bấm Tạo voice, tool TỰ CÀI thư viện "
+                            "VieNeu và tự tải model. Âm thanh ra 48 kHz. Giấy phép Apache-2.0 — dùng cho "
+                            "kênh bật kiếm tiền được. Chỉ clone giọng của bạn hoặc người đã đồng ý._")
             with gr.Group(visible=S.get("mode") == "xtts") as grp_xtts:
                 with gr.Row():
                     sample_up = gr.File(label="File giọng mẫu 6-30 giây (1 người nói, ít tạp âm)",
@@ -269,15 +298,16 @@ with gr.Blocks(title="Quy trình Video",
                     el_voice = gr.Textbox(label="Voice ID (giọng đã clone trên elevenlabs.io)")
             mode_dd.change(
                 lambda m: (gr.update(visible=m == "edge"), gr.update(visible=m == "f5vi"),
-                           gr.update(visible=m == "xtts"), gr.update(visible=m == "eleven")),
-                inputs=mode_dd, outputs=[grp_edge, grp_f5, grp_xtts, grp_eleven])
+                           gr.update(visible=m == "vieneu"), gr.update(visible=m == "xtts"),
+                           gr.update(visible=m == "eleven")),
+                inputs=mode_dd, outputs=[grp_edge, grp_f5, grp_vn, grp_xtts, grp_eleven])
             btn3 = gr.Button("🎙️ Tạo voice từ kịch bản", variant="primary")
             status3 = gr.Textbox(label="Trạng thái", lines=2)
             audio_out = gr.Audio(label="Voice (nghe thử / dùng cho thẻ 3 — hoặc tải file giọng của bạn vào đây)",
                                  type="filepath", value=_saved_audio())
             btn3.click(step3_voice, inputs=[script, mode_dd, voice_dd, speed, sample_up, clone_lang, el_key, el_voice,
-                                            f5_sample, f5_ref_text, f5_name],
-                       outputs=[status3, audio_out, f5_saved])
+                                            f5_sample, f5_ref_text, f5_name, vn_sample, vn_name],
+                       outputs=[status3, audio_out, f5_saved, vn_saved])
 
             def ui_pick_voice(name):
                 if not name:
@@ -300,6 +330,28 @@ with gr.Blocks(title="Quy trình Video",
                             outputs=[f5_sample, f5_ref_text, f5_name])
             btn_save_voice.click(ui_save_voice, inputs=[f5_name, f5_sample, f5_ref_text],
                                  outputs=[f5_saved, status3])
+
+            def ui_pick_voice_vn(name):
+                if not name:
+                    return gr.update(), gr.update()
+                try:
+                    path, _ref = load_voice_profile(name)
+                    return path, name
+                except Exception:
+                    return gr.update(), gr.update()
+
+            def ui_save_voice_vn(name, sample):
+                try:
+                    used = save_voice_profile(name, sample, "")
+                    return (gr.update(choices=list_voice_profiles(), value=used),
+                            f"Đã lưu giọng '{used}' vào kho giọng (dùng chung cho cả F5 và VieNeu).")
+                except Exception as e:
+                    return gr.update(), f"Lưu giọng bị lỗi: {e}"
+
+            vn_saved.change(ui_pick_voice_vn, inputs=[vn_saved],
+                            outputs=[vn_sample, vn_name])
+            btn_save_voice_vn.click(ui_save_voice_vn, inputs=[vn_name, vn_sample],
+                                    outputs=[vn_saved, status3])
 
         with gr.Tab("3 · SRT siêu tốc"):
             with gr.Row():

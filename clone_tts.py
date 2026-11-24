@@ -354,6 +354,83 @@ def f5_clone(text: str, sample_path: str, ref_text: str = "", out_path: str = No
     return out_path
 
 
+_vn_model = None
+
+
+def _import_vieneu():
+    try:
+        from vieneu import Vieneu
+        return Vieneu
+    except Exception:
+        return None
+
+
+def ensure_vieneu(say=print):
+    """Chua co SDK vieneu thi TU CAI (ban toi thieu chay CPU bang ONNX,
+    khong can PyTorch nen nhe va it loi)."""
+    Vieneu = _import_vieneu()
+    if Vieneu is not None:
+        return Vieneu
+    say("Chưa có thư viện VieNeu — tool đang TỰ CÀI giúp bạn (bản nhẹ chạy CPU, "
+        "mất vài phút, cần mạng). Cứ để yên, đừng tắt cửa sổ tool...")
+    import subprocess
+    import sys
+    proc = subprocess.run([sys.executable, "-m", "pip", "install", "vieneu"],
+                          capture_output=True, text=True)
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "")[-400:]
+        raise RuntimeError(
+            "Tự cài VieNeu thất bại. Hãy chụp màn hình lỗi này gửi Muse xem giúp.\n"
+            f"Chi tiết cuối log cài đặt: {tail}")
+    Vieneu = _import_vieneu()
+    if Vieneu is None:
+        raise RuntimeError("Đã cài xong VieNeu nhưng cần khởi động lại tool. "
+                           "Hãy tắt tool, mở lại run.bat rồi bấm Tạo voice lần nữa.")
+    say("Đã cài xong thư viện VieNeu!")
+    return Vieneu
+
+
+def vieneu_clone(text: str, sample_path: str, out_path: str = None, say=print):
+    """Clone giong tieng Viet bang VieNeu-TTS v3 Turbo (Apache-2.0 - dung thuong mai duoc).
+    Chay duong CPU/ONNX (backend='onnx') cho on dinh tren moi may: nhanh hon thoi
+    gian thuc (RTF ~0,6), khong phu thuoc card do hoa/driver. Mau 3-8 giay,
+    tool tu cat + khu nhieu, KHONG can loi thoai cua mau."""
+    if not text or not text.strip():
+        raise ValueError("Chua co kich ban. Hay nhap kich ban o the 1.")
+    if not sample_path or not os.path.isfile(sample_path):
+        raise ValueError("Chua co file giong mau. Hay tai file mau (3-15 giay, 1 nguoi noi) "
+                         "hoac chon giong da luu.")
+    Vieneu = ensure_vieneu(say)
+    global _vn_model
+    if out_path is None:
+        out_path = os.path.join(os.getcwd(), "voice_vieneu.wav")
+    if _vn_model is None:
+        say("Đang nạp model VieNeu v3 Turbo (lần đầu sẽ tự tải model về máy)...")
+        try:
+            _vn_model = Vieneu(backend="onnx")
+        except TypeError:
+            _vn_model = Vieneu()
+    import numpy as np
+    chunks = _split_chunks(text, max_len=280)
+    waves = []
+    for i, chunk in enumerate(chunks, 1):
+        say(f"VieNeu đang đọc đoạn {i}/{len(chunks)}...")
+        try:
+            audio = _vn_model.infer(chunk, ref_audio=sample_path, denoise=True)
+        except TypeError:
+            audio = _vn_model.infer(chunk, ref_audio=sample_path)
+        if isinstance(audio, tuple):  # Phong xa: co ban tra (sample_rate, wave)
+            audio = audio[-1]
+        waves.append(np.asarray(audio, dtype="float32").reshape(-1))
+        waves.append(np.zeros(int(48000 * 0.12), dtype="float32"))
+    full = np.concatenate(waves) if len(waves) > 1 else waves[0]
+    _write_wav(out_path, full, 48000)
+    if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+        raise RuntimeError("Clone giong that bai. Hay thu doan giong mau sach hon (it tap am).")
+    say("Đã clone xong voice tiếng Việt bằng VieNeu v3 Turbo!")
+    return out_path
+
+
 def elevenlabs_tts(text: str, api_key: str, voice_id: str, out_path: str = None,
                    model_id: str = "eleven_multilingual_v2") -> str:
     """Doc bang giong da clone tren ElevenLabs (doc duoc ca tieng Viet).
