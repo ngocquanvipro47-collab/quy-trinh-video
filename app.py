@@ -102,15 +102,38 @@ def ui_check_update():
         return f"Không kiểm tra được cập nhật (kiểm tra lại mạng rồi thử lại): {e}"
 
 
-def _restart_later(delay=2.5):
-    """Tu dong tat tool va mo lai ban moi sau khi cap nhat (nhu phan mem that)."""
+_RESTARTER = r"""
+import socket, subprocess, sys, time
+app, cwd = sys.argv[1], sys.argv[2]
+for _ in range(120):  # Cho toi da 60 giay cho cong 7860 duoc nha ra
+    s = socket.socket()
+    try:
+        s.bind(("127.0.0.1", 7860))
+        s.close()
+        break
+    except OSError:
+        time.sleep(0.5)
+subprocess.Popen([sys.executable, app], cwd=cwd)
+"""
+
+
+def _restart_later(delay=2.0):
+    """Tu dong tat tool va mo lai ban moi sau khi cap nhat (nhu phan mem that).
+    Ban cu thoat HAN roi ban moi moi mo, lai dung cong 7860 nhu cu:
+    tranh loi 'mat ket noi' / nhay cong nhu truoc (ban moi mo khi cong con bi chiem)."""
     def _run():
         time.sleep(delay)
         try:
-            subprocess.Popen([sys.executable, os.path.abspath(__file__)],
-                             cwd=os.path.dirname(os.path.abspath(__file__)))
+            flags = 0
+            if os.name == "nt":
+                flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+            subprocess.Popen([sys.executable, "-c", _RESTARTER,
+                              os.path.abspath(__file__),
+                              os.path.dirname(os.path.abspath(__file__))],
+                             creationflags=flags, close_fds=True)
         except Exception:
             pass
+        time.sleep(0.5)
         os._exit(0)
     threading.Thread(target=_run, daemon=True).start()
 
