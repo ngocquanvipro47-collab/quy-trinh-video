@@ -201,6 +201,29 @@ def ensure_f5(say=print):
     return F5TTS
 
 
+def _make_f5(F5TTS, ckpt, vocab, device):
+    """Tao F5TTS tu thich ung theo phien ban thu vien f5-tts tren may:
+    ban moi (1.1+) khong con nhan 'vocoder_name' va ten model la F5TTS_v1_Base;
+    ban cu nhan vocoder_name='vocos' va ten F5TTS_Base. Chi truyen tham so ma
+    dung phien ban do ho tro (xem chu ky ham) - tranh loi 'unexpected keyword argument'."""
+    import inspect
+    try:
+        params = inspect.signature(F5TTS.__init__).parameters
+    except (TypeError, ValueError):
+        params = {}
+    kwargs = {"ckpt_file": ckpt, "vocab_file": vocab, "device": device}
+    if "vocoder_name" in params:
+        kwargs["vocoder_name"] = "vocos"
+        kwargs["model"] = "F5TTS_Base"
+    elif "model" in params:
+        kwargs["model"] = "F5TTS_v1_Base"
+    try:
+        return F5TTS(**kwargs)
+    except TypeError:
+        # Phong xa: thu lai voi bo tham so toi thieu nhat
+        return F5TTS(ckpt_file=ckpt, vocab_file=vocab, device=device)
+
+
 def f5_clone(text: str, sample_path: str, ref_text: str = "", out_path: str = None,
              speed: float = 1.0, say=print, return_ref: bool = False):
     """Clone giong TIENG VIET bang F5-TTS ViVoice, chay offline tren may.
@@ -231,8 +254,7 @@ def f5_clone(text: str, sample_path: str, ref_text: str = "", out_path: str = No
         except Exception:
             pass
         say(f"Đang nạp model F5-TTS (chạy bằng {'card đồ họa GPU' if device == 'cuda' else 'CPU'})...")
-        _f5_model = F5TTS(model="F5TTS_Base", ckpt_file=ckpt, vocab_file=vocab,
-                          vocoder_name="vocos", device=device)
+        _f5_model = _make_f5(F5TTS, ckpt, vocab, device)
     import numpy as np
     chunks = _split_chunks(text.lower())
     ref_lower = ref_text.lower()
