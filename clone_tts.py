@@ -168,6 +168,39 @@ def _write_wav(path, wave, sr):
             w.writeframes(pcm.tobytes())
 
 
+def _import_f5():
+    try:
+        from f5_tts.api import F5TTS
+        return F5TTS
+    except ImportError:
+        return None
+
+
+def ensure_f5(say=print):
+    """Chua co thu vien f5-tts thi TU CAI bang chinh Python dang chay tool
+    (dung moi truong .venv cua tool), khoi can nguoi dung go lenh."""
+    F5TTS = _import_f5()
+    if F5TTS is not None:
+        return F5TTS
+    say("Chưa có thư viện F5-TTS — tool đang TỰ CÀI giúp bạn (khoảng 2-3 GB, "
+        "mất vài phút, cần có mạng). Cứ để yên, đừng tắt cửa sổ tool...")
+    import subprocess
+    import sys
+    proc = subprocess.run([sys.executable, "-m", "pip", "install", "f5-tts"],
+                          capture_output=True, text=True)
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "")[-400:]
+        raise RuntimeError(
+            "Tự cài F5-TTS thất bại. Hãy chụp màn hình lỗi này gửi Muse xem giúp.\n"
+            f"Chi tiết cuối log cài đặt: {tail}")
+    F5TTS = _import_f5()
+    if F5TTS is None:
+        raise RuntimeError("Đã cài xong F5-TTS nhưng cần khởi động lại tool. "
+                           "Hãy tắt tool, mở lại run.bat rồi bấm Tạo voice lần nữa.")
+    say("Đã cài xong thư viện F5-TTS!")
+    return F5TTS
+
+
 def f5_clone(text: str, sample_path: str, ref_text: str = "", out_path: str = None,
              speed: float = 1.0, say=print) -> str:
     """Clone giong TIENG VIET bang F5-TTS ViVoice, chay offline tren may.
@@ -180,13 +213,7 @@ def f5_clone(text: str, sample_path: str, ref_text: str = "", out_path: str = No
     if not sample_path or not os.path.exists(sample_path):
         raise RuntimeError("Chua co file giong mau. Hay tai len 1 doan ghi am 5-15 giay, "
                            "chi co 1 nguoi noi, cang it tap am cang giong.")
-    try:
-        from f5_tts.api import F5TTS
-    except ImportError:
-        raise RuntimeError(
-            "Chua cai thu vien F5-TTS. Hay chay lenh: pip install f5-tts\n"
-            "(goi nay kem PyTorch ~2-3 GB; nen dung Python 3.10 hoac 3.11. "
-            "Lan chay dau tien tool se tu tai model tieng Viet ~1,35 GB.)")
+    F5TTS = ensure_f5(say)
     global _f5_model
     ckpt, vocab = _f5_ensure_files(say)
     ref_text = (ref_text or "").strip()

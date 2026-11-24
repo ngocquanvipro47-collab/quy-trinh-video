@@ -1,5 +1,5 @@
 """
-Tool QUY TRINH VIDEO: Link YouTube -> Kich ban -> Voice -> SRT + Bang tu khoa Canva
+Tool QUY TRINH VIDEO: Link YouTube -> Kich ban -> Voice -> SRT sieu toc
 Buoc 1: Dan link YouTube, lay loi thoai tu phu de video (ke ca phu de tu dong).
 Buoc 2: Sua kich ban thanh cua minh ngay trong o text (hoac dan kich ban cua ban vao).
 Buoc 3: Tao voice tieng Viet bang Edge TTS (hoac tai file giong cua ban len).
@@ -205,9 +205,10 @@ with gr.Blocks(title="Quy trình Video",
                     f5_ref_text = gr.Textbox(
                         label="Lời thoại của đoạn mẫu (gõ đúng từng chữ đoạn mẫu đã nói — để trống thì tool tự nghe bằng Whisper)",
                         lines=2)
-                gr.Markdown("_F5-TTS chạy trên máy bạn, miễn phí. Lần đầu bấm Tạo voice, tool tự tải model "
-                            "tiếng Việt ~1,35 GB (cần đã cài thêm: `pip install f5-tts`). Giấy phép model là "
-                            "phi thương mại — chỉ clone giọng của bạn hoặc người đã đồng ý._")
+                gr.Markdown("_F5-TTS chạy trên máy bạn, miễn phí. Lần đầu bấm Tạo voice, tool sẽ TỰ CÀI "
+                            "thư viện F5-TTS giúp bạn (~2-3 GB, cần mạng, chờ vài phút — xem tiến trình ở "
+                            "cửa sổ đen của tool, đừng tắt) rồi tự tải model tiếng Việt ~1,35 GB. Giấy phép "
+                            "model là phi thương mại — chỉ clone giọng của bạn hoặc người đã đồng ý._")
             with gr.Group(visible=S.get("mode") == "xtts") as grp_xtts:
                 with gr.Row():
                     sample_up = gr.File(label="File giọng mẫu 6-30 giây (1 người nói, ít tạp âm)",
@@ -268,7 +269,7 @@ with gr.Blocks(title="Quy trình Video",
         try:
             used = save_project(name, _state_from(vals), OUT_DIR)
             return (gr.update(choices=list_projects(), value=used),
-                    f"Đã lưu dự án '{used}' (gồm kịch bản + file voice/SRT/CSV nếu đã có).")
+                    f"Đã lưu dự án '{used}' (gồm kịch bản + file voice/SRT nếu đã có).")
         except Exception as e:
             return gr.update(), f"Lưu dự án bị lỗi: {e}"
 
