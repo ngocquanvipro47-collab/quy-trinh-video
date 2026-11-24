@@ -151,24 +151,32 @@ def ui_do_update():
 
 
 APP_CSS = """
-.gradio-container{max-width:1020px!important;margin:0 auto!important;font-size:14px}
-body{background:linear-gradient(180deg,#ecfdf5 0,#f8fafc 260px)!important}
-#banner{background:linear-gradient(92deg,#0f766e,#14b8a6 55%,#06b6d4);border-radius:16px;
-  padding:16px 20px 13px;color:#fff;box-shadow:0 6px 18px rgba(13,148,136,.28);margin-bottom:10px}
-#banner .t{font-size:22px;font-weight:800;letter-spacing:.2px}
-#banner .s{font-size:12.5px;color:#d7f9f3;margin-top:2px}
-#banner .v{display:inline-block;background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.45);
-  border-radius:999px;padding:1px 10px;font-size:11.5px;margin-left:8px;vertical-align:2px}
-.tab-nav{border-bottom:2px solid #a7f3ea!important;gap:4px}
-.tab-nav button{font-size:13.5px!important;font-weight:600;padding:8px 16px!important;
-  border-radius:12px 12px 0 0!important;color:#0f766e!important}
-.tab-nav button.selected{background:linear-gradient(180deg,#14b8a6,#0f766e)!important;color:#fff!important}
-button.primary{background:linear-gradient(92deg,#0f766e,#14b8a6)!important;border:none!important;
-  border-radius:10px!important;box-shadow:0 3px 10px rgba(20,184,166,.35);font-weight:700}
-button.secondary,button.sm{border-radius:10px!important}
-.block{border-radius:14px!important}
-input,textarea{border-radius:9px!important}
-.block label span{font-size:12px!important}
+/* Giao dien MAU 2 - CLEAN LIGHT (Kiu chon 2026-11-24): sang toi gian kieu Apple/Linear,
+   nen xam rat nhat, the trang, diem nhan xanh duong #2563eb, tab gach chan. */
+.gradio-container{max-width:1040px!important;margin:0 auto!important;font-size:14px;color:#0f172a}
+body{background:#edf0f5!important}
+#banner{background:#ffffff;border:1px solid #e5e7eb;border-radius:18px;padding:15px 20px;
+  box-shadow:0 2px 12px rgba(15,23,42,.05);margin-bottom:10px;display:flex;align-items:center;gap:14px}
+#banner .ic{background:#2563eb;color:#fff;font-size:21px;width:46px;height:46px;min-width:46px;
+  border-radius:12px;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 3px 8px rgba(37,99,235,.30)}
+#banner .t{font-size:22px;font-weight:800;color:#0f172a;letter-spacing:.2px}
+#banner .s{font-size:12.5px;color:#64748b;margin-top:2px}
+#banner .v{display:inline-block;background:#dbeafe;color:#2563eb;border-radius:999px;
+  padding:1px 10px;font-size:11.5px;font-weight:700;margin-left:8px;vertical-align:2px}
+.tab-nav{border-bottom:1px solid #e2e8f0!important;gap:2px}
+.tab-nav button{font-size:13.5px!important;font-weight:600;padding:9px 16px!important;
+  color:#64748b!important;background:transparent!important;border:none!important;border-radius:0!important}
+.tab-nav button.selected{color:#2563eb!important;box-shadow:inset 0 -3px 0 #2563eb}
+button.primary{background:#2563eb!important;border:none!important;border-radius:11px!important;
+  box-shadow:0 2px 8px rgba(37,99,235,.28);font-weight:700;color:#fff!important}
+button.primary:hover{background:#1d4ed8!important}
+button.secondary,button.sm{border-radius:10px!important;background:#ffffff!important;
+  border:1px solid #dbe1ea!important;color:#334155!important}
+.block{background:#ffffff!important;border:1px solid #e8ecf1!important;border-radius:14px!important;
+  box-shadow:0 1px 2px rgba(15,23,42,.04)}
+input,textarea{border-radius:10px!important;border-color:#dbe1ea!important}
+.block label span{font-size:12px!important;color:#475569!important;font-weight:600}
 footer{display:none!important}
 """
 
@@ -181,11 +189,11 @@ def _saved_audio():
 
 
 with gr.Blocks(title="Quy trình Video",
-               theme=gr.themes.Soft(primary_hue=gr.themes.colors.teal,
+               theme=gr.themes.Soft(primary_hue=gr.themes.colors.blue,
                                     neutral_hue=gr.themes.colors.slate),
                css=APP_CSS) as demo:
-    gr.HTML(f"""<div id="banner"><span class="t">🎬 Quy Trình Video</span><span class="v">v{LOCAL_VERSION}</span>
-    <div class="s">YouTube → Kịch bản → Voice → SRT siêu tốc · Việc đang làm được TỰ LƯU, tắt mở lại không mất</div></div>""")
+    gr.HTML(f"""<div id="banner"><div class="ic">🎬</div><div><span class="t">Quy Trình Video</span><span class="v">v{LOCAL_VERSION}</span>
+    <div class="s">YouTube → Kịch bản → Voice → SRT siêu tốc · Việc đang làm được TỰ LƯU, tắt mở lại không mất</div></div></div>""")
     with gr.Row():
         upd_status = gr.Textbox(label="Cập nhật phần mềm (qua GitHub)", lines=1, scale=4, interactive=False)
         btn_check = gr.Button("🔄 Kiểm tra", size="sm", scale=1)
