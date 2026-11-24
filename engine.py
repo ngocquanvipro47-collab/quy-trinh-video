@@ -97,19 +97,30 @@ def _add_cuda_dll_dirs():
         pass
 
 
-def _run_transcribe(model_size, device, compute_type, input_path, lang, say):
+def _run_transcribe(model_size, device, compute_type, input_path, lang, say,
+                    beam_size=5, batched=False):
     """Chay nghe 1 lan bang device chi dinh. PHAI tieu thu het generator
     segments o trong ham nay, vi loi GPU (thieu cublas...) chi xuat hien
-    khi bat dau nghe that, khong xuat hien luc tai model."""
+    khi bat dau nghe that, khong xuat hien luc tai model.
+    batched=True: nghe theo LO (BatchedInferencePipeline) - nhanh hon nhieu lan tren GPU.
+    beam_size=1: giai ma tham lam (greedy) - nhanh hon dang ke, do chinh xac giam rat it."""
     from faster_whisper import WhisperModel
     model = WhisperModel(model_size, device=device, compute_type=compute_type)
     say(f"Da tai model '{model_size}' - chay bang "
         f"{'card do hoa (GPU)' if device == 'cuda' else 'CPU'}")
-    say("Dang nghe va chep loi... (file dai se mat vai phut)")
-    segments, info = model.transcribe(
-        input_path, language=lang, word_timestamps=True,
-        vad_filter=True, beam_size=5,
-    )
+    say("Dang nghe va chep loi...")
+    if batched:
+        from faster_whisper import BatchedInferencePipeline
+        pipe = BatchedInferencePipeline(model=model)
+        segments, info = pipe.transcribe(
+            input_path, language=lang, word_timestamps=True,
+            vad_filter=True, batch_size=16,
+        )
+    else:
+        segments, info = model.transcribe(
+            input_path, language=lang, word_timestamps=True,
+            vad_filter=True, beam_size=beam_size,
+        )
     words = []
     for seg in segments:
         if seg.words:
@@ -123,12 +134,14 @@ def _run_transcribe(model_size, device, compute_type, input_path, lang, say):
 
 # ---------- Ham chinh: file voice -> file SRT ----------
 def transcribe_to_srt(input_path, output_srt=None, model_size="small",
-                      language="vi", max_chars=42, progress=None, device="auto"):
+                      language="vi", max_chars=42, progress=None, device="auto",
+                      beam_size=5, batched=False):
     """
-    model_size: tiny / base / small (khuyen dung) / medium / large-v3
+    model_size: tiny / base / small / turbo / medium / large-v3
     language: 'vi' = tieng Viet, 'auto'/None = tu dong nhan dien, hoac ma khac: en, ko, ja, de, th...
     device: 'auto' = thu GPU truoc, loi GPU thi TU DONG chuyen sang CPU (khong sap)
             'cpu' = chay CPU ngay tu dau, 'cuda' = bat buoc GPU
+    beam_size=1 + batched=True = che do SIEU TOC (mac dinh cua the SRT trong tool).
     Tra ve: (duong dan file srt, duong dan file txt, so dong phu de)
     """
     def say(msg):
@@ -140,16 +153,28 @@ def transcribe_to_srt(input_path, output_srt=None, model_size="small",
     lang = language if language not in (None, "", "auto") else None
 
     if device == "cpu":
-        words = _run_transcribe(model_size, "cpu", "int8", input_path, lang, say)
+        words = _run_transcribe(model_size, "cpu", "int8", input_path, lang, say,
+                                beam_size=beam_size, batched=False)
     elif device == "cuda":
-        words = _run_transcribe(model_size, "cuda", "float16", input_path, lang, say)
-    else:  # auto: thu GPU, bat ky loi GPU nao cung quay ve CPU
-        try:
-            words = _run_transcribe(model_size, "cuda", "float16", input_path, lang, say)
-        except Exception as e:
-            say(f"GPU khong dung duoc ({e}). Da tu dong chuyen sang chay bang CPU - "
-                f"van ra dung SRT, chi cham hon mot chut.")
-            words = _run_transcribe(model_size, "cpu", "int8", input_path, lang, say)
+        words = _run_transcribe(model_size, "cuda", "float16", input_path, lang, say,
+                                beam_size=beam_size, batched=batched)
+    else:  # auto: GPU theo lo -> GPU thuong -> CPU, loi o dau thi lui o do
+        attempts = [("cuda", "float16", batched), ("cuda", "float16", False),
+                    ("cpu", "int8", False)]
+        seen, words, last_err = set(), None, None
+        for dev, ct, bat in attempts:
+            if (dev, bat) in seen:
+                continue
+            seen.add((dev, bat))
+            try:
+                words = _run_transcribe(model_size, dev, ct, input_path, lang, say,
+                                        beam_size=beam_size, batched=bat)
+                break
+            except Exception as e:
+                last_err = e
+                say(f"Cach nghe {dev}{' theo lo' if bat else ''} khong dung duoc ({e}). Dang thu cach tiep theo...")
+        if words is None:
+            raise last_err
 
     if not words:
         raise RuntimeError("Khong nghe thay loi thoai nao trong file. Hay kiem tra lai file giong.")

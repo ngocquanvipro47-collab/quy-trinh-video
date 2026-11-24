@@ -5,7 +5,6 @@ Buoc 2: Sua kich ban thanh cua minh ngay trong o text (hoac dan kich ban cua ban
 Buoc 3: Tao voice tieng Viet bang Edge TTS (hoac tai file giong cua ban len).
 Buoc 4: Tao file SRT + Bang phan canh co san TU KHOA CANVA cho tung canh.
 """
-import csv
 import os
 import re
 import subprocess
@@ -20,13 +19,11 @@ from projects import (clear_session, has_content, list_projects, load_project,
 from updater import LOCAL_VERSION, check_update, do_update
 from clone_tts import XTTS_LANGS, elevenlabs_tts, f5_clone, xtts_clone
 from engine import transcribe_to_srt
-from keywords import canva_keywords
 from tts import VOICE_CHOICES, make_voice
 from youtube_script import clean_error, fetch_youtube_script
 
 OUT_DIR = os.path.join(os.getcwd(), "ket_qua")
 os.makedirs(OUT_DIR, exist_ok=True)
-HEADERS = ["Cảnh / Thời gian", "Lời đọc", "Từ khóa Canva", "Từ khóa Canva (EN)", "Trạng thái"]
 
 
 def step1_fetch(url, src_lang, use_cookies):
@@ -66,70 +63,22 @@ def step3_voice(script, mode, voice, speed, sample, clone_lang, el_key, el_voice
         return f"CÓ LỖI: {e}", None
 
 
-def parse_srt(path):
-    cues = []
-    blocks = re.split(r"\n\s*\n", open(path, encoding="utf-8").read().strip())
-    for b in blocks:
-        lines = [l for l in b.splitlines() if l.strip()]
-        if len(lines) < 3 or "-->" not in lines[1]:
-            continue
-        def to_sec(ts):
-            ts = ts.strip().replace(",", ".")
-            h, m, s = ts.split(":")
-            return int(h) * 3600 + int(m) * 60 + float(s)
-        start, end = lines[1].split("-->")
-        cues.append((to_sec(start), to_sec(end), " ".join(lines[2:])))
-    return cues
-
-
-def merge_scenes(cues):
-    """Gom cac dong phu de ngan thanh tung CANH loi doc tron y (10-25 giay),
-    nhu ban sua tay 1_Canva.srt: 80 manh vun -> 19 canh.
-    Quy tac: tich luy cho den khi du 10 giay VA het cau (dau ., !, ?, …, ”),
-    hoac vuot 25 giay thi cat; mon moi ("Mon N: ...") luon bat dau canh moi.
-    Ban cu chi gom manh <1 giay hoac <12 ky tu nen bang ra vo manh, tim Canva cham."""
-    scenes = []
-    cur = None  # [start, end, text]
-    for start, end, text in cues:
-        if cur is None:
-            cur = [start, end, text]
-            continue
-        new_dish = re.search(r"món\s*\d+\s*:", text, re.I)
-        dur = end - cur[0]
-        ends_sentence = cur[2].rstrip().endswith((".", "!", "?", "…", "”", '"'))
-        if new_dish or (dur >= 10.0 and ends_sentence) or dur >= 25.0:
-            scenes.append(tuple(cur))
-            cur = [start, end, text]
-        else:
-            cur[1] = end
-            cur[2] = (cur[2] + " " + text).strip()
-    if cur is not None:
-        scenes.append(tuple(cur))
-    return scenes
-
-
-def step4_srt(voice_file, model_size, max_chars, subject_vn):
+def step4_srt(voice_file, model_size, max_chars):
+    """Chi tao SRT - che do SIEU TOC: nghe theo lo tren GPU + beam=1 + model nhe.
+    Da bo phan tich tu khoa Canva / bang CSV theo yeu cau cua Kiu (2026-11-24)."""
     if not voice_file:
-        return "Chưa có file voice. Hãy tạo voice ở Bước 3 hoặc tải file giọng của bạn lên.", None, None, [], ""
+        return "Chưa có file voice. Hãy tạo voice ở thẻ 2 hoặc tải file giọng của bạn lên ô voice ở thẻ 2.", None, ""
     try:
         srt_path = os.path.join(OUT_DIR, "phu_de.srt")
-        transcribe_to_srt(voice_file, output_srt=srt_path, model_size=model_size,
-                          language="vi", max_chars=int(max_chars), device="auto")
-        cues = merge_scenes(parse_srt(srt_path))
-        rows = []
-        for i, (start, end, text) in enumerate(cues, 1):
-            kw_vn, kw_en = canva_keywords(text, subject_vn=subject_vn.strip() or "người cao tuổi")
-            rows.append([f"{i} | {start:.3f} → {end:.3f}", text, kw_vn, kw_en, "Chưa dựng"])
-        csv_path = os.path.join(OUT_DIR, "bang_phan_canh.csv")
-        with open(csv_path, "w", encoding="utf-8-sig", newline="") as f:
-            w = csv.writer(f)
-            w.writerow(HEADERS)
-            w.writerows(rows)
+        _srt, _txt, n_cues = transcribe_to_srt(
+            voice_file, output_srt=srt_path, model_size=model_size,
+            language="vi", max_chars=int(max_chars), device="auto",
+            beam_size=1, batched=True)
         preview = open(srt_path, encoding="utf-8").read()
-        return (f"HOÀN TẤT! Đã tạo SRT ({len(rows)} cảnh) và bảng phân cảnh kèm từ khóa Canva.\n"
-                "Mở file bang_phan_canh.csv bằng Excel để xem/in bảng như ảnh mẫu."), srt_path, csv_path, rows, preview
+        return (f"HOÀN TẤT! Đã tạo file SRT ({n_cues} dòng phụ đề) ở chế độ siêu tốc. "
+                "Bấm tải file .SRT bên dưới về dùng luôn."), srt_path, preview
     except Exception as e:
-        return f"CÓ LỖI: {e}", None, None, [], ""
+        return f"CÓ LỖI: {e}", None, ""
 
 
 def ui_check_update():
@@ -203,7 +152,7 @@ with gr.Blocks(title="Quy trình Video",
                                     neutral_hue=gr.themes.colors.slate),
                css=APP_CSS) as demo:
     gr.HTML(f"""<div id="banner"><span class="t">🎬 Quy Trình Video</span><span class="v">v{LOCAL_VERSION}</span>
-    <div class="s">YouTube → Kịch bản → Voice → SRT + Từ khóa Canva · Việc đang làm được TỰ LƯU, tắt mở lại không mất</div></div>""")
+    <div class="s">YouTube → Kịch bản → Voice → SRT siêu tốc · Việc đang làm được TỰ LƯU, tắt mở lại không mất</div></div>""")
     with gr.Row():
         upd_status = gr.Textbox(label="Cập nhật phần mềm (qua GitHub)", lines=1, scale=4, interactive=False)
         btn_check = gr.Button("🔄 Kiểm tra", size="sm", scale=1)
@@ -282,32 +231,29 @@ with gr.Blocks(title="Quy trình Video",
                                             f5_sample, f5_ref_text],
                        outputs=[status3, audio_out])
 
-        with gr.Tab("3 · SRT + Từ khóa"):
+        with gr.Tab("3 · SRT siêu tốc"):
             with gr.Row():
-                model_dd = gr.Dropdown(choices=[("small - Khuyên dùng", "small"), ("base - Nhanh", "base"),
-                                                ("medium - Chính xác hơn", "medium"), ("large-v3 - Tốt nhất, nặng", "large-v3")],
-                                       value=S.get("model", "small"), label="Model nghe")
+                model_dd = gr.Dropdown(choices=[("base - Nhanh (mặc định)", "base"),
+                                                ("turbo - Nhanh + chính xác (nên dùng khi có card đồ họa)", "turbo"),
+                                                ("small - Chính xác hơn, chậm hơn", "small"),
+                                                ("tiny - Siêu nhanh, kém chính xác", "tiny"),
+                                                ("medium - Chậm", "medium"), ("large-v3 - Chậm nhất", "large-v3")],
+                                       value=S.get("model", "base"), label="Model nghe")
                 maxc = gr.Slider(28, 84, value=S.get("maxc", 42), step=1, label="Số chữ tối đa / dòng phụ đề")
-                subject = gr.Textbox(value=S.get("subject", "người cao tuổi"),
-                                     label="Chủ thể của kênh (ghép vào từ khóa)")
-            btn4 = gr.Button("📝 Tạo SRT + Bảng từ khóa Canva", variant="primary")
+            btn4 = gr.Button("📝 Tạo SRT ngay", variant="primary")
             status4 = gr.Textbox(label="Trạng thái", lines=2)
-            with gr.Row():
-                srt_out = gr.File(label="Tải file .SRT")
-                csv_out = gr.File(label="Tải bảng .CSV (mở bằng Excel)")
-            with gr.Accordion("Xem trước bảng phân cảnh + SRT", open=False):
-                table = gr.Dataframe(headers=HEADERS, label="Bảng phân cảnh", wrap=True)
-                srt_preview = gr.Textbox(label="Nội dung SRT", lines=6, max_lines=12)
-            btn4.click(step4_srt, inputs=[audio_out, model_dd, maxc, subject],
-                       outputs=[status4, srt_out, csv_out, table, srt_preview])
-            gr.Markdown("_Mẹo: từ khóa Canva theo công thức Chủ thể + Hành động + Bối cảnh; "
-                        "cột tiếng Anh thường cho nhiều kết quả đẹp hơn._")
+            srt_out = gr.File(label="Tải file .SRT")
+            srt_preview = gr.Textbox(label="Xem trước nội dung SRT", lines=6, max_lines=12)
+            btn4.click(step4_srt, inputs=[audio_out, model_dd, maxc],
+                       outputs=[status4, srt_out, srt_preview])
+            gr.Markdown("_Chế độ siêu tốc: nghe theo lô trên card đồ họa + giải mã nhanh. "
+                        "Voice lấy từ thẻ 2 (giọng vừa tạo hoặc file bạn tải lên ô voice ở thẻ 2)._")
 
     # ---------- Tu luu tien trinh + Du an ----------
     STATE_INPUTS = [url, src_lang, title_box, script, mode_dd, voice_dd, speed,
-                    clone_lang, model_dd, maxc, subject, audio_out]
+                    clone_lang, model_dd, maxc, audio_out]
     STATE_KEYS = ["url", "src_lang", "title", "script", "mode", "voice", "speed",
-                  "clone_lang", "model", "maxc", "subject", "audio"]
+                  "clone_lang", "model", "maxc", "audio"]
 
     def _collect(*vals):
         save_session(dict(zip(STATE_KEYS, vals)))
@@ -335,31 +281,31 @@ with gr.Blocks(title="Quy trình Video",
                 msg = (f"Đã tự lưu dự án trước vào mục '{used}' (mở lại bằng nút Mở dự án) "
                        "và bắt đầu dự án mới tinh.")
             clear_session()
-            return ("", "", "", "", "", "", None, None, None, [], "",
+            return ("", "", "", "", "", "", None, None, "",
                     "", gr.update(choices=list_projects(), value=None), msg)
         except Exception as e:
-            return ("", "", "", "", "", "", None, None, None, [], "",
+            return ("", "", "", "", "", "", None, None, "",
                     "", gr.update(), f"Tạo dự án mới bị lỗi: {e}")
 
     def ui_load_project(name):
         if not name:
-            return (gr.update(),) * 12 + ("Chưa chọn dự án nào để mở.",)
+            return (gr.update(),) * 11 + ("Chưa chọn dự án nào để mở.",)
         try:
             st = load_project(name)
             return (st.get("url", ""), st.get("src_lang", "ko"), st.get("title", ""),
                     st.get("script", ""), st.get("mode", "edge"),
                     st.get("voice", "vi-VN-NamMinhNeural"), st.get("speed", 0),
-                    st.get("clone_lang", "ko"), st.get("model", "small"),
-                    st.get("maxc", 42), st.get("subject", "người cao tuổi"),
+                    st.get("clone_lang", "ko"), st.get("model", "base"),
+                    st.get("maxc", 42),
                     st.get("audio"), f"Đã mở dự án '{name}'.")
         except Exception as e:
-            return (gr.update(),) * 12 + (f"Mở dự án bị lỗi: {e}",)
+            return (gr.update(),) * 11 + (f"Mở dự án bị lỗi: {e}",)
 
     btn_save_proj.click(ui_save_project, inputs=[proj_name] + STATE_INPUTS,
                         outputs=[proj_dd, proj_status])
     btn_new_proj.click(ui_new_project, inputs=STATE_INPUTS,
                        outputs=[url, title_box, script, status1, status3, status4,
-                                audio_out, srt_out, csv_out, table, srt_preview,
+                                audio_out, srt_out, srt_preview,
                                 proj_name, proj_dd, proj_status])
     btn_load_proj.click(ui_load_project, inputs=[proj_dd],
                         outputs=STATE_INPUTS + [proj_status])
