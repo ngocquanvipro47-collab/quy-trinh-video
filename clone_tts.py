@@ -176,11 +176,72 @@ def _import_f5():
         return None
 
 
+def _patch_torchaudio_io():
+    """torchaudio ban moi doc/ghi am thanh qua torchcodec - thu vien nay doi hoi
+    FFmpeg ban 'full-shared' cai tren may, may khong co la loi 'Could not load
+    libtorchcodec'. F5 chi can doc file mau + ghi file tam, nen thay hai ham
+    load/save cua torchaudio bang soundfile (nhe, khong can FFmpeg he thong)."""
+    try:
+        import soundfile as sf
+        import torch
+        import torchaudio
+
+        def _load(filepath, *a, **k):
+            data, sr = sf.read(str(filepath), always_2d=True, dtype="float32")
+            return torch.from_numpy(data.T.copy()), sr
+
+        def _save(filepath, src, sample_rate, *a, **k):
+            arr = src.detach().cpu().numpy()
+            if arr.ndim == 2:
+                arr = arr.T
+            sf.write(str(filepath), arr, int(sample_rate))
+
+        torchaudio.load = _load
+        torchaudio.save = _save
+    except Exception:
+        pass
+
+
+def _maybe_gpu_torch(say):
+    """Neu may co card do hoa nhung PyTorch dang la ban CPU (+cpu, clone rat cham)
+    thi thu nang len ban GPU (cu128) MOT lan duy nhat (co file danh dau de khong
+    thu lai mai). Nang hong thi thoi - van chay CPU duoc."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return
+    except Exception:
+        return
+    marker = os.path.join(os.path.dirname(F5_DIR), ".gpu_torch_tried")
+    if os.path.exists(marker):
+        return
+    try:
+        os.makedirs(os.path.dirname(marker), exist_ok=True)
+        with open(marker, "w") as f:
+            f.write("1")
+    except Exception:
+        pass
+    say("Máy có vẻ có card đồ họa nhưng PyTorch đang là bản CPU (clone sẽ chậm) — "
+        "tool TỰ NÂNG lên bản GPU giúp bạn (~2-3 GB, chỉ lần này, cần mạng)...")
+    import subprocess
+    import sys
+    proc = subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade",
+                           "--index-url", "https://download.pytorch.org/whl/cu128",
+                           "torch", "torchaudio"], capture_output=True, text=True)
+    if proc.returncode != 0:
+        say("Không nâng được bản GPU (không sao, vẫn chạy bằng CPU được, chỉ chậm hơn). Làm tiếp...")
+        return
+    raise RuntimeError("Đã cài xong PyTorch bản GPU. Hãy TẮT tool rồi MỞ LẠI run.bat, "
+                       "sau đó bấm Tạo voice — từ giờ clone chạy bằng card đồ họa, nhanh hơn nhiều.")
+
+
 def ensure_f5(say=print):
     """Chua co thu vien f5-tts thi TU CAI bang chinh Python dang chay tool
     (dung moi truong .venv cua tool), khoi can nguoi dung go lenh."""
     F5TTS = _import_f5()
     if F5TTS is not None:
+        _patch_torchaudio_io()
+        _maybe_gpu_torch(say)
         return F5TTS
     say("Chưa có thư viện F5-TTS — tool đang TỰ CÀI giúp bạn (khoảng 2-3 GB, "
         "mất vài phút, cần có mạng). Cứ để yên, đừng tắt cửa sổ tool...")
@@ -198,6 +259,8 @@ def ensure_f5(say=print):
         raise RuntimeError("Đã cài xong F5-TTS nhưng cần khởi động lại tool. "
                            "Hãy tắt tool, mở lại run.bat rồi bấm Tạo voice lần nữa.")
     say("Đã cài xong thư viện F5-TTS!")
+    _patch_torchaudio_io()
+    _maybe_gpu_torch(say)
     return F5TTS
 
 
