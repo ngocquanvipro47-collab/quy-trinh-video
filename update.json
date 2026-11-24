@@ -1,1 +1,18 @@
-{"files":["app.py","engine.py","keywords.py","tts.py","clone_tts.py","youtube_script.py","updater.py","projects.py","requirements.txt","requirements_clone.txt","README.md","update.json"],"notes":"THEM che do clone tieng Viet moi: VieNeu v3 Turbo - chay CPU bang ONNX nhanh hon thoi gian thuc, khong can card do hoa, mau chi can 3-8 giay va khong can go loi thoai mau, am thanh 48 kHz, giay phep Apache-2.0 (dung cho kenh kiem tien duoc). Dung CHUNG kho Giong da luu voi F5 (giong Nhung chon lai la dung ngay). Tool tu cai thu vien VieNeu o lan dung dau tien.","version":"1.12.0"}
+{
+  "files": [
+    "app.py",
+    "engine.py",
+    "keywords.py",
+    "tts.py",
+    "clone_tts.py",
+    "youtube_script.py",
+    "updater.py",
+    "projects.py",
+    "requirements.txt",
+    "requirements_clone.txt",
+    "README.md",
+    "update.json"
+  ],
+  "notes": "Sua loi SRT GPU bi cham gan nhu treo tren may Kiu: engine chua dang ky thu muc torch/lib (noi ban PyTorch GPU giu cublas64_12.dll) nen faster-whisper khong thay DLL, duong nghe theo lo that bai va duong thuong chay rat cham. Nay dang ky ca torch/lib lan cac goi nvidia-*. Them dong tien do 'da nghe toi ... giay' moi 20 doan de thay tool dang chay.",
+  "version": "1.12.1"
+}

@@ -74,27 +74,37 @@ def cues_to_srt(cues) -> str:
     return "\n".join(lines)
 
 
-# ---------- Windows: tim them DLL cua CUDA trong cac goi pip nvidia (neu co) ----------
+# ---------- Windows: tim them DLL cua CUDA (cublas/cudnn) ----------
 def _add_cuda_dll_dirs():
-    """May Windows thieu cublas64_12.dll trong PATH la loi rat hay gap.
-    Neu nguoi dung co cai goi pip nvidia-cublas-cu12 / nvidia-cudnn-cu12 thi
-    nap thu muc bin cua chung vao danh sach tim DLL."""
+    """May Windows thieu cublas64_12.dll la loi rat hay gap cua faster-whisper GPU.
+    DLL nay nam o 2 noi tuy cach cai: (1) thu muc bin cua cac goi pip nvidia-*,
+    (2) thu muc torch/lib cua PyTorch ban CUDA (ban GPU ma tool tu cai cho F5/VieNeu).
+    Dang ky ca hai vao danh sach tim DLL cua Windows."""
     import sys
     if sys.platform != "win32":
         return
+    candidates = []
     try:
         import nvidia
         for base in list(nvidia.__path__):
             for sub in ("cublas", "cudnn", "cuda_runtime"):
-                bin_dir = os.path.join(base, sub, "bin")
-                if os.path.isdir(bin_dir):
-                    try:
-                        os.add_dll_directory(bin_dir)
-                    except Exception:
-                        pass
-                    os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
+                candidates.append(os.path.join(base, sub, "bin"))
     except Exception:
         pass
+    try:
+        import sysconfig
+        purelib = sysconfig.get_paths().get("purelib", "")
+        candidates.append(os.path.join(purelib, "torch", "lib"))
+    except Exception:
+        pass
+    for bin_dir in candidates:
+        if bin_dir and os.path.isdir(bin_dir):
+            try:
+                os.add_dll_directory(bin_dir)
+            except Exception:
+                pass
+            if bin_dir not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
 
 
 def _run_transcribe(model_size, device, compute_type, input_path, lang, say,
@@ -114,7 +124,7 @@ def _run_transcribe(model_size, device, compute_type, input_path, lang, say,
         pipe = BatchedInferencePipeline(model=model)
         segments, info = pipe.transcribe(
             input_path, language=lang, word_timestamps=True,
-            vad_filter=True, batch_size=16,
+            vad_filter=True, batch_size=16, beam_size=beam_size,
         )
     else:
         segments, info = model.transcribe(
@@ -122,7 +132,11 @@ def _run_transcribe(model_size, device, compute_type, input_path, lang, say,
             vad_filter=True, beam_size=beam_size,
         )
     words = []
+    _n = 0
     for seg in segments:
+        _n += 1
+        if _n % 20 == 0:  # In tien do dinh ky de biet tool dang chay, khong phai treo
+            say(f"...đã nghe tới {seg.end:.0f} giây của file...")
         if seg.words:
             for w in seg.words:
                 words.append({"word": w.word, "start": w.start, "end": w.end})
