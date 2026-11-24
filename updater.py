@@ -14,7 +14,7 @@ import urllib.request
 
 REPO = "ngocquanvipro47-collab/quy-trinh-video"
 BRANCH = "main"
-LOCAL_VERSION = "1.5.0"
+LOCAL_VERSION = "1.6.0"
 RAW_BASE = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/"
 UPDATE_URL = RAW_BASE + "update.json"
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
