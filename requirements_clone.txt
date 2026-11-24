@@ -1,4 +1,9 @@
-# Chi can cai file nay neu dung che do CLONE giong bang XTTS (Buoc 3).
-# Goi nay nang (kem PyTorch ~2-3 GB) va chay on dinh nhat tren Python 3.10 / 3.11.
+# Chi can cai file nay neu dung che do CLONE giong (the "Tao voice").
+# Cac goi nay nang (kem PyTorch ~2-3 GB) va chay on dinh nhat tren Python 3.10 / 3.11.
 # Khong cai thi cac che do giong khac (Edge TTS, ElevenLabs) van chay binh thuong.
 coqui-tts>=0.24
+
+# Clone giong TIENG VIET bang F5-TTS (che do "Clone F5-TTS tieng Viet"):
+#   pip install f5-tts
+# Model tieng Viet (~1,35 GB) tool se tu tai ve o lan chay dau tien.
+f5-tts>=1.1

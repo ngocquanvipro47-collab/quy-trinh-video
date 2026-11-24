@@ -13,6 +13,7 @@ Hai duong:
 """
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 
@@ -61,6 +62,170 @@ def xtts_clone(text: str, sample_path: str, language: str = "en", out_path: str 
                             language=language, file_path=out_path)
     if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
         raise RuntimeError("Clone giong that bai. Hay thu doan giong mau sach hon (it tap am).")
+    return out_path
+
+
+# ================= F5-TTS TIENG VIET (ViVoice) =================
+# Model F5-TTS fine-tune 1000 gio tieng Viet cua hynt tren HuggingFace:
+#   https://huggingface.co/hynt/F5-TTS-Vietnamese-ViVoice
+# Clone giong tu mau ngan (kem loi thoai cua mau), chay offline, mien phi.
+# GIAY PHEP CUA MODEL: CC-BY-NC-SA-4.0 -> CHI DUNG PHI THUONG MAI.
+F5_BASE_URL = "https://huggingface.co/hynt/F5-TTS-Vietnamese-ViVoice/resolve/main/"
+F5_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Data", "models", "f5_vivoice")
+F5_CKPT_SIZE = 1348597231  # model_last.pt tren HuggingFace
+
+_f5_model = None
+
+
+def _f5_download(filename, dest, say):
+    url = F5_BASE_URL + filename
+    req = urllib.request.Request(url, headers={"User-Agent": "QuyTrinhVideo-F5"})
+    tmp = dest + ".part"
+    with urllib.request.urlopen(req, timeout=120) as r, open(tmp, "wb") as f:
+        total = int(r.headers.get("Content-Length") or 0)
+        done = 0
+        last_pct = -1
+        while True:
+            chunk = r.read(1024 * 1024)
+            if not chunk:
+                break
+            f.write(chunk)
+            done += len(chunk)
+            if total:
+                pct = done * 100 // total
+                if pct >= last_pct + 10:
+                    last_pct = pct
+                    say(f"Đang tải model F5-TTS: {pct}% ({done // 1048576}/{total // 1048576} MB)...")
+    os.replace(tmp, dest)
+
+
+def _f5_ensure_files(say):
+    """Tai model_last.pt (~1,35 GB) + vocab (config.json) ve Data/models/f5_vivoice neu chua co."""
+    os.makedirs(F5_DIR, exist_ok=True)
+    ckpt = os.path.join(F5_DIR, "model_last.pt")
+    vocab = os.path.join(F5_DIR, "vocab.txt")
+    if not os.path.isfile(ckpt) or os.path.getsize(ckpt) != F5_CKPT_SIZE:
+        say("Lần đầu dùng F5-TTS: đang tải model tiếng Việt (~1,35 GB), chờ chút nhé...")
+        _f5_download("model_last.pt", ckpt, say)
+    if not os.path.isfile(vocab):
+        _f5_download("config.json", vocab, say)  # config.json cua repo chinh la file vocab
+    return ckpt, vocab
+
+
+def _split_chunks(text, max_len=160):
+    """Chia kich ban dai thanh tung doan ngan (F5 doc tot nhat o doan < ~30 giay)."""
+    parts = re.split(r"(?<=[.!?…])\s+|\n+", text)
+    chunks, cur = [], ""
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        while len(p) > max_len:  # cau qua dai: cat o dau phay gan nhat
+            cut = p.rfind(",", 0, max_len)
+            if cut < 40:
+                cut = max_len
+            chunks.append(p[:cut + 1].strip() if cut < len(p) else p)
+            p = p[cut + 1:].strip() if cut < len(p) else ""
+        if not cur:
+            cur = p
+        elif len(cur) + 1 + len(p) <= max_len:
+            cur = cur + " " + p
+        else:
+            chunks.append(cur)
+            cur = p
+    if cur:
+        chunks.append(cur)
+    return [c for c in chunks if c]
+
+
+def _auto_ref_text(sample_path, say):
+    """Tu nghe loi thoai cua doan giong mau bang Whisper (khi nguoi dung de trong o loi mau)."""
+    from engine import _run_transcribe
+    try:
+        words = _run_transcribe("small", "cuda", "float16", sample_path, "vi", say)
+    except Exception:
+        words = _run_transcribe("small", "cpu", "int8", sample_path, "vi", say)
+    text = re.sub(r"\s+", " ", "".join(w["word"] for w in words)).strip()
+    if not text:
+        raise RuntimeError("Không nghe rõ lời trong đoạn giọng mẫu. Hãy gõ tay lời thoại của đoạn mẫu vào ô 'Lời thoại của đoạn mẫu'.")
+    say(f"Đã tự nhận diện lời của giọng mẫu: “{text}”")
+    return text
+
+
+def _write_wav(path, wave, sr):
+    try:
+        import soundfile as sf
+        sf.write(path, wave, sr)
+    except ImportError:
+        import struct
+        import wave as wave_mod
+        import numpy as np
+        pcm = (np.clip(wave, -1.0, 1.0) * 32767).astype("<i2")
+        with wave_mod.open(path, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(sr)
+            w.writeframes(pcm.tobytes())
+
+
+def f5_clone(text: str, sample_path: str, ref_text: str = "", out_path: str = None,
+             speed: float = 1.0, say=print) -> str:
+    """Clone giong TIENG VIET bang F5-TTS ViVoice, chay offline tren may.
+    sample_path: doan giong mau 5-15 giay, 1 nguoi noi, it tap am.
+    ref_text: loi thoai dung nguyen van cua doan mau (de trong = tool tu nghe bang Whisper).
+    LUU Y GIAY PHEP MODEL: CC-BY-NC-SA-4.0 - chi dung phi thuong mai."""
+    text = (text or "").strip()
+    if not text:
+        raise RuntimeError("Kich ban dang trong, chua co gi de doc.")
+    if not sample_path or not os.path.exists(sample_path):
+        raise RuntimeError("Chua co file giong mau. Hay tai len 1 doan ghi am 5-15 giay, "
+                           "chi co 1 nguoi noi, cang it tap am cang giong.")
+    try:
+        from f5_tts.api import F5TTS
+    except ImportError:
+        raise RuntimeError(
+            "Chua cai thu vien F5-TTS. Hay chay lenh: pip install f5-tts\n"
+            "(goi nay kem PyTorch ~2-3 GB; nen dung Python 3.10 hoac 3.11. "
+            "Lan chay dau tien tool se tu tai model tieng Viet ~1,35 GB.)")
+    global _f5_model
+    ckpt, vocab = _f5_ensure_files(say)
+    ref_text = (ref_text or "").strip()
+    if not ref_text:
+        say("Chưa có lời thoại của giọng mẫu — tool tự nghe bằng Whisper...")
+        ref_text = _auto_ref_text(sample_path, say)
+    if out_path is None:
+        out_path = os.path.join(os.getcwd(), "voice_f5.wav")
+    if _f5_model is None:
+        device = "cpu"
+        try:
+            import torch
+            if torch.cuda.is_available():
+                device = "cuda"
+        except Exception:
+            pass
+        say(f"Đang nạp model F5-TTS (chạy bằng {'card đồ họa GPU' if device == 'cuda' else 'CPU'})...")
+        _f5_model = F5TTS(model="F5TTS_Base", ckpt_file=ckpt, vocab_file=vocab,
+                          vocoder_name="vocos", device=device)
+    import numpy as np
+    chunks = _split_chunks(text.lower())
+    ref_lower = ref_text.lower()
+    waves, sr_out = [], 24000
+    for i, chunk in enumerate(chunks, 1):
+        say(f"Đang đọc đoạn {i}/{len(chunks)}...")
+        try:
+            wave, sr, _spec = _f5_model.infer(ref_file=sample_path, ref_text=ref_lower,
+                                              gen_text=chunk, speed=float(speed))
+        except TypeError:
+            wave, sr, _spec = _f5_model.infer(ref_file=sample_path, ref_text=ref_lower,
+                                              gen_text=chunk)
+        sr_out = sr
+        waves.append(np.asarray(wave, dtype="float32"))
+        waves.append(np.zeros(int(sr * 0.12), dtype="float32"))  # nghi ngan giua cac doan
+    full = np.concatenate(waves) if len(waves) > 1 else waves[0]
+    _write_wav(out_path, full, sr_out)
+    if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+        raise RuntimeError("Clone giong that bai. Hay thu doan giong mau sach hon (it tap am).")
+    say("Đã clone xong voice tiếng Việt bằng F5-TTS!")
     return out_path
 
 

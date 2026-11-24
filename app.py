@@ -18,7 +18,7 @@ import gradio as gr
 from projects import (clear_session, has_content, list_projects, load_project,
                       load_session, save_project, save_session)
 from updater import LOCAL_VERSION, check_update, do_update
-from clone_tts import XTTS_LANGS, elevenlabs_tts, xtts_clone
+from clone_tts import XTTS_LANGS, elevenlabs_tts, f5_clone, xtts_clone
 from engine import transcribe_to_srt
 from keywords import canva_keywords
 from tts import VOICE_CHOICES, make_voice
@@ -42,12 +42,18 @@ def step1_fetch(url, src_lang, use_cookies):
         return f"CÓ LỖI: {clean_error(e)}", "", ""
 
 
-def step3_voice(script, mode, voice, speed, sample, clone_lang, el_key, el_voice_id):
+def step3_voice(script, mode, voice, speed, sample, clone_lang, el_key, el_voice_id,
+                f5_sample=None, f5_ref_text=""):
     try:
         if mode == "edge":
             out = os.path.join(OUT_DIR, "voice.mp3")
             make_voice(script, voice=voice, speed_percent=int(speed), out_path=out)
             return "ĐÃ TẠO XONG VOICE (giọng có sẵn)! Nghe thử bên dưới, rồi sang Bước 4.", out
+        if mode == "f5vi":
+            out = os.path.join(OUT_DIR, "voice_f5.wav")
+            f5_clone(script, f5_sample, ref_text=f5_ref_text or "", out_path=out)
+            return ("ĐÃ CLONE XONG VOICE TIẾNG VIỆT BẰNG F5-TTS! Nghe thử bên dưới, rồi sang thẻ 3. "
+                    "(Nhắc nhỏ: model F5-TTS có giấy phép phi thương mại.)"), out
         if mode == "xtts":
             out = os.path.join(OUT_DIR, "voice_clone.wav")
             xtts_clone(script, sample, language=clone_lang, out_path=out)
@@ -234,6 +240,7 @@ with gr.Blocks(title="Quy trình Video",
         with gr.Tab("2 · Tạo voice"):
             mode_dd = gr.Dropdown(
                 choices=[("Giọng có sẵn - miễn phí (Edge TTS)", "edge"),
+                         ("Clone F5-TTS TIẾNG VIỆT - offline, miễn phí (giấy phép phi thương mại)", "f5vi"),
                          ("Clone XTTS - offline (Anh/Nhật/Hàn/Đức... không có tiếng Việt)", "xtts"),
                          ("Clone ElevenLabs - trả phí (có tiếng Việt, chuẩn nhất)", "eleven")],
                 value=S.get("mode", "edge"), label="Chế độ")
@@ -242,6 +249,16 @@ with gr.Blocks(title="Quy trình Video",
                     voice_dd = gr.Dropdown(choices=VOICE_CHOICES, value=S.get("voice", "vi-VN-NamMinhNeural"),
                                            label="Chọn giọng (đúng ngôn ngữ của kịch bản mới đọc chuẩn)", scale=2)
                     speed = gr.Slider(-30, 30, value=S.get("speed", 0), step=1, label="Tốc độ (%)", scale=1)
+            with gr.Group(visible=S.get("mode") == "f5vi") as grp_f5:
+                with gr.Row():
+                    f5_sample = gr.File(label="File giọng mẫu tiếng Việt 5-15 giây (1 người nói, ít tạp âm)",
+                                        file_types=["audio", ".mp3", ".wav", ".m4a"])
+                    f5_ref_text = gr.Textbox(
+                        label="Lời thoại của đoạn mẫu (gõ đúng từng chữ đoạn mẫu đã nói — để trống thì tool tự nghe bằng Whisper)",
+                        lines=2)
+                gr.Markdown("_F5-TTS chạy trên máy bạn, miễn phí. Lần đầu bấm Tạo voice, tool tự tải model "
+                            "tiếng Việt ~1,35 GB (cần đã cài thêm: `pip install f5-tts`). Giấy phép model là "
+                            "phi thương mại — chỉ clone giọng của bạn hoặc người đã đồng ý._")
             with gr.Group(visible=S.get("mode") == "xtts") as grp_xtts:
                 with gr.Row():
                     sample_up = gr.File(label="File giọng mẫu 6-30 giây (1 người nói, ít tạp âm)",
@@ -254,14 +271,15 @@ with gr.Blocks(title="Quy trình Video",
                     el_key = gr.Textbox(label="ElevenLabs API key", type="password")
                     el_voice = gr.Textbox(label="Voice ID (giọng đã clone trên elevenlabs.io)")
             mode_dd.change(
-                lambda m: (gr.update(visible=m == "edge"), gr.update(visible=m == "xtts"),
-                           gr.update(visible=m == "eleven")),
-                inputs=mode_dd, outputs=[grp_edge, grp_xtts, grp_eleven])
+                lambda m: (gr.update(visible=m == "edge"), gr.update(visible=m == "f5vi"),
+                           gr.update(visible=m == "xtts"), gr.update(visible=m == "eleven")),
+                inputs=mode_dd, outputs=[grp_edge, grp_f5, grp_xtts, grp_eleven])
             btn3 = gr.Button("🎙️ Tạo voice từ kịch bản", variant="primary")
             status3 = gr.Textbox(label="Trạng thái", lines=2)
             audio_out = gr.Audio(label="Voice (nghe thử / dùng cho thẻ 3 — hoặc tải file giọng của bạn vào đây)",
                                  type="filepath", value=_saved_audio())
-            btn3.click(step3_voice, inputs=[script, mode_dd, voice_dd, speed, sample_up, clone_lang, el_key, el_voice],
+            btn3.click(step3_voice, inputs=[script, mode_dd, voice_dd, speed, sample_up, clone_lang, el_key, el_voice,
+                                            f5_sample, f5_ref_text],
                        outputs=[status3, audio_out])
 
         with gr.Tab("3 · SRT + Từ khóa"):
