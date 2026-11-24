@@ -142,76 +142,95 @@ def ui_do_update():
         return f"Cập nhật bị lỗi: {e}"
 
 
-with gr.Blocks(title="Quy trình Video: YouTube → Voice → SRT + Từ khóa Canva") as demo:
-    gr.Markdown("# 🎬 Quy trình Video: YouTube → Kịch bản → Voice → SRT + Từ khóa Canva")
+COMPACT_CSS = """
+.gradio-container{max-width:1020px!important;margin:0 auto!important;font-size:14px}
+h1{font-size:19px!important;margin:0!important}
+h2{font-size:15px!important;margin:4px 0!important}
+.tab-nav button{font-size:13px!important;padding:6px 12px!important}
+.block label span{font-size:12px!important}
+footer{display:none!important}
+"""
+
+with gr.Blocks(title="Quy trình Video", theme=gr.themes.Soft(), css=COMPACT_CSS) as demo:
     with gr.Row():
-        btn_check = gr.Button("🔄 Kiểm tra cập nhật", scale=1)
-        btn_do = gr.Button("⬆️ Cập nhật ngay", variant="primary", scale=1)
-        upd_status = gr.Textbox(label=f"Cập nhật phần mềm qua GitHub (bản đang chạy: v{LOCAL_VERSION})",
-                                lines=2, scale=3, interactive=False)
+        gr.Markdown("# 🎬 Quy trình Video", elem_id="app-title")
+        upd_status = gr.Textbox(label=f"Cập nhật (đang chạy v{LOCAL_VERSION})", lines=1,
+                                scale=3, interactive=False)
+        btn_check = gr.Button("🔄 Kiểm tra", size="sm", scale=1)
+        btn_do = gr.Button("⬆️ Cập nhật ngay", size="sm", variant="primary", scale=1)
     btn_check.click(ui_check_update, outputs=upd_status)
     btn_do.click(ui_do_update, outputs=upd_status)
-    gr.Markdown("## Bước 1 — Lấy kịch bản từ link YouTube")
-    with gr.Row():
-        url = gr.Textbox(label="Dán link video YouTube", scale=3)
-        src_lang = gr.Dropdown(
-            choices=[("Tiếng Hàn (kênh Hàn)", "ko"), ("Tiếng Việt", "vi"), ("Tiếng Anh", "en"),
-                     ("Tiếng Nhật", "ja"), ("Tự động - có phụ đề nào lấy phụ đề đó", "auto")],
-            value="ko", label="Ngôn ngữ gốc của video", scale=1)
-    cookies_cb = gr.Checkbox(value=False, label="Dùng cookie từ Chrome (bật khi bị lỗi 429 - cần đã đăng nhập YouTube trên Chrome; "
-                                                "nếu Chrome đang mở mà báo lỗi cookie, hãy tắt hẳn Chrome rồi bấm lại)")
-    btn1 = gr.Button("⬇️ LẤY KỊCH BẢN TỪ LINK", variant="primary")
-    status1 = gr.Textbox(label="Trạng thái bước 1", lines=4)
-    title_box = gr.Textbox(label="Tiêu đề video gốc")
 
-    gr.Markdown("## Bước 2 — Sửa thành kịch bản của bạn")
-    script = gr.Textbox(label="Kịch bản (kịch bản gốc hiện ở đây — hãy sửa / dịch / viết lại thành của bạn, "
-                              "hoặc xóa đi và dán kịch bản của bạn vào)", lines=12)
-    btn1.click(step1_fetch, inputs=[url, src_lang, cookies_cb], outputs=[status1, title_box, script])
+    with gr.Tabs():
+        with gr.Tab("1 · Kịch bản"):
+            with gr.Row():
+                url = gr.Textbox(label="Link video YouTube", scale=3)
+                src_lang = gr.Dropdown(
+                    choices=[("Hàn", "ko"), ("Việt", "vi"), ("Anh", "en"), ("Nhật", "ja"), ("Tự động", "auto")],
+                    value="ko", label="Tiếng gốc", scale=1)
+                btn1 = gr.Button("⬇️ Lấy kịch bản", variant="primary", scale=1)
+            with gr.Row():
+                status1 = gr.Textbox(label="Trạng thái", lines=2, scale=3)
+                title_box = gr.Textbox(label="Tiêu đề video gốc", lines=2, scale=2)
+            with gr.Accordion("Nâng cao", open=False):
+                cookies_cb = gr.Checkbox(value=False, label="Dùng cookie từ Chrome (bật khi bị lỗi 429; "
+                                                            "cần đã đăng nhập YouTube trên Chrome, nếu báo lỗi cookie thì tắt hẳn Chrome rồi bấm lại)")
+            script = gr.Textbox(label="Kịch bản — sửa / dịch / viết lại thành của bạn tại đây",
+                                lines=8, max_lines=16)
+            btn1.click(step1_fetch, inputs=[url, src_lang, cookies_cb],
+                       outputs=[status1, title_box, script])
 
-    gr.Markdown("## Bước 3 — Tạo voice")
-    mode_dd = gr.Dropdown(
-        choices=[("Giọng có sẵn (Edge TTS - miễn phí, nhiều giọng Việt/Anh/Nhật/Hàn/Đức/Thái/Trung)", "edge"),
-                 ("CLONE giọng bằng XTTS - offline, miễn phí (Anh/Nhật/Hàn/Đức... KHÔNG có tiếng Việt)", "xtts"),
-                 ("CLONE giọng bằng ElevenLabs - online, trả phí (clone được cả TIẾNG VIỆT, đọc chuẩn nhất)", "eleven")],
-        value="edge", label="Chế độ tạo voice")
-    with gr.Row():
-        voice_dd = gr.Dropdown(choices=VOICE_CHOICES, value="vi-VN-NamMinhNeural",
-                               label="[Chế độ giọng có sẵn] Chọn giọng - NHỚ chọn giọng đúng ngôn ngữ của kịch bản mới đọc chuẩn")
-        speed = gr.Slider(-30, 30, value=0, step=1, label="Tốc độ đọc (%) - trừ là chậm lại, cộng là nhanh hơn")
-    with gr.Row():
-        sample_up = gr.File(label="[Chế độ XTTS] File giọng mẫu để clone (6-30 giây, 1 người nói, ít tạp âm)",
-                            file_types=["audio", ".mp3", ".wav", ".m4a"])
-        clone_lang = gr.Dropdown(choices=[(v, k) for k, v in XTTS_LANGS.items()], value="ko",
-                                 label="[Chế độ XTTS] Ngôn ngữ sẽ đọc bằng giọng clone")
-    with gr.Row():
-        el_key = gr.Textbox(label="[ElevenLabs] API key (chỉ lưu trên máy của bạn)", type="password")
-        el_voice = gr.Textbox(label="[ElevenLabs] Voice ID của giọng đã clone trên elevenlabs.io")
-    btn3 = gr.Button("🎙️ TẠO VOICE TỪ KỊCH BẢN", variant="primary")
-    status3 = gr.Textbox(label="Trạng thái bước 3", lines=3)
-    audio_out = gr.Audio(label="Nghe thử voice / file voice sẽ dùng ở Bước 4", type="filepath")
-    btn3.click(step3_voice, inputs=[script, mode_dd, voice_dd, speed, sample_up, clone_lang, el_key, el_voice],
-               outputs=[status3, audio_out])
-    gr.Markdown("_Không muốn dùng giọng máy? Cứ tải thẳng file giọng của bạn vào ô nghe thử ở trên._")
+        with gr.Tab("2 · Tạo voice"):
+            mode_dd = gr.Dropdown(
+                choices=[("Giọng có sẵn - miễn phí (Edge TTS)", "edge"),
+                         ("Clone XTTS - offline (Anh/Nhật/Hàn/Đức... không có tiếng Việt)", "xtts"),
+                         ("Clone ElevenLabs - trả phí (có tiếng Việt, chuẩn nhất)", "eleven")],
+                value="edge", label="Chế độ")
+            with gr.Group(visible=True) as grp_edge:
+                with gr.Row():
+                    voice_dd = gr.Dropdown(choices=VOICE_CHOICES, value="vi-VN-NamMinhNeural",
+                                           label="Chọn giọng (đúng ngôn ngữ của kịch bản mới đọc chuẩn)", scale=2)
+                    speed = gr.Slider(-30, 30, value=0, step=1, label="Tốc độ (%)", scale=1)
+            with gr.Group(visible=False) as grp_xtts:
+                with gr.Row():
+                    sample_up = gr.File(label="File giọng mẫu 6-30 giây (1 người nói, ít tạp âm)",
+                                        file_types=["audio", ".mp3", ".wav", ".m4a"])
+                    clone_lang = gr.Dropdown(choices=[(v, k) for k, v in XTTS_LANGS.items()], value="ko",
+                                             label="Ngôn ngữ đọc bằng giọng clone")
+            with gr.Group(visible=False) as grp_eleven:
+                with gr.Row():
+                    el_key = gr.Textbox(label="ElevenLabs API key", type="password")
+                    el_voice = gr.Textbox(label="Voice ID (giọng đã clone trên elevenlabs.io)")
+            mode_dd.change(
+                lambda m: (gr.update(visible=m == "edge"), gr.update(visible=m == "xtts"),
+                           gr.update(visible=m == "eleven")),
+                inputs=mode_dd, outputs=[grp_edge, grp_xtts, grp_eleven])
+            btn3 = gr.Button("🎙️ Tạo voice từ kịch bản", variant="primary")
+            status3 = gr.Textbox(label="Trạng thái", lines=2)
+            audio_out = gr.Audio(label="Voice (nghe thử / dùng cho thẻ 3 — hoặc tải file giọng của bạn vào đây)",
+                                 type="filepath")
+            btn3.click(step3_voice, inputs=[script, mode_dd, voice_dd, speed, sample_up, clone_lang, el_key, el_voice],
+                       outputs=[status3, audio_out])
 
-    gr.Markdown("## Bước 4 — Xuất SRT + Bảng phân cảnh có từ khóa Canva")
-    with gr.Row():
-        model_dd = gr.Dropdown(choices=[("small - Khuyên dùng", "small"), ("base - Nhanh", "base"),
-                                        ("medium - Chính xác hơn", "medium"), ("large-v3 - Tốt nhất, nặng", "large-v3")],
-                               value="small", label="Model nghe (độ chính xác)")
-        maxc = gr.Slider(28, 84, value=42, step=1, label="Số chữ tối đa / 1 dòng phụ đề")
-        subject = gr.Textbox(value="người cao tuổi", label="Chủ thể chính của kênh (để ghép vào từ khóa Canva)")
-    btn4 = gr.Button("📝 TẠO SRT + BẢNG TỪ KHÓA CANVA", variant="primary", size="lg")
-    status4 = gr.Textbox(label="Trạng thái bước 4", lines=3)
-    with gr.Row():
-        srt_out = gr.File(label="Tải file .SRT")
-        csv_out = gr.File(label="Tải bảng phân cảnh .CSV (mở bằng Excel)")
-    table = gr.Dataframe(headers=HEADERS, label="Bảng phân cảnh - xem trước", wrap=True)
-    srt_preview = gr.Textbox(label="Xem trước nội dung SRT", lines=10)
-    btn4.click(step4_srt, inputs=[audio_out, model_dd, maxc, subject],
-               outputs=[status4, srt_out, csv_out, table, srt_preview])
-    gr.Markdown("**Mẹo từ khóa:** cột Từ khóa Canva đã được rút gọn theo công thức *Chủ thể + Hành động + Bối cảnh* "
-                "(cách Canva tìm ra ảnh/video sát nhất). Cột tiếng Anh thường cho nhiều kết quả đẹp hơn khi tìm trên Canva.")
+        with gr.Tab("3 · SRT + Từ khóa"):
+            with gr.Row():
+                model_dd = gr.Dropdown(choices=[("small - Khuyên dùng", "small"), ("base - Nhanh", "base"),
+                                                ("medium - Chính xác hơn", "medium"), ("large-v3 - Tốt nhất, nặng", "large-v3")],
+                                       value="small", label="Model nghe")
+                maxc = gr.Slider(28, 84, value=42, step=1, label="Số chữ tối đa / dòng phụ đề")
+                subject = gr.Textbox(value="người cao tuổi", label="Chủ thể của kênh (ghép vào từ khóa)")
+            btn4 = gr.Button("📝 Tạo SRT + Bảng từ khóa Canva", variant="primary")
+            status4 = gr.Textbox(label="Trạng thái", lines=2)
+            with gr.Row():
+                srt_out = gr.File(label="Tải file .SRT")
+                csv_out = gr.File(label="Tải bảng .CSV (mở bằng Excel)")
+            with gr.Accordion("Xem trước bảng phân cảnh + SRT", open=False):
+                table = gr.Dataframe(headers=HEADERS, label="Bảng phân cảnh", wrap=True)
+                srt_preview = gr.Textbox(label="Nội dung SRT", lines=6, max_lines=12)
+            btn4.click(step4_srt, inputs=[audio_out, model_dd, maxc, subject],
+                       outputs=[status4, srt_out, csv_out, table, srt_preview])
+            gr.Markdown("_Mẹo: từ khóa Canva theo công thức Chủ thể + Hành động + Bối cảnh; "
+                        "cột tiếng Anh thường cho nhiều kết quả đẹp hơn._")
 
 if __name__ == "__main__":
     demo.launch(inbrowser=True)
