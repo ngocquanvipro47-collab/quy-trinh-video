@@ -14,8 +14,9 @@ import time
 
 import gradio as gr
 
-from projects import (clear_session, has_content, list_projects, load_project,
-                      load_session, save_project, save_session)
+from projects import (clear_session, has_content, list_projects, list_voice_profiles,
+                      load_project, load_session, load_voice_profile, save_project,
+                      save_session, save_voice_profile)
 from updater import LOCAL_VERSION, check_update, do_update
 from clone_tts import XTTS_LANGS, elevenlabs_tts, f5_clone, xtts_clone
 from engine import transcribe_to_srt
@@ -40,27 +41,36 @@ def step1_fetch(url, src_lang, use_cookies):
 
 
 def step3_voice(script, mode, voice, speed, sample, clone_lang, el_key, el_voice_id,
-                f5_sample=None, f5_ref_text=""):
+                f5_sample=None, f5_ref_text="", f5_name=""):
     try:
         if mode == "edge":
             out = os.path.join(OUT_DIR, "voice.mp3")
             make_voice(script, voice=voice, speed_percent=int(speed), out_path=out)
-            return "ĐÃ TẠO XONG VOICE (giọng có sẵn)! Nghe thử bên dưới, rồi sang Bước 4.", out
+            return "ĐÃ TẠO XONG VOICE (giọng có sẵn)! Nghe thử bên dưới, rồi sang thẻ 3.", out, gr.update()
         if mode == "f5vi":
             out = os.path.join(OUT_DIR, "voice_f5.wav")
-            f5_clone(script, f5_sample, ref_text=f5_ref_text or "", out_path=out)
-            return ("ĐÃ CLONE XONG VOICE TIẾNG VIỆT BẰNG F5-TTS! Nghe thử bên dưới, rồi sang thẻ 3. "
-                    "(Nhắc nhỏ: model F5-TTS có giấy phép phi thương mại.)"), out
+            out, used_ref = f5_clone(script, f5_sample, ref_text=f5_ref_text or "",
+                                     out_path=out, return_ref=True)
+            msg = ("ĐÃ CLONE XONG VOICE TIẾNG VIỆT BẰNG F5-TTS! Nghe thử bên dưới, rồi sang thẻ 3. "
+                   "(Nhắc nhỏ: model F5-TTS có giấy phép phi thương mại.)")
+            upd = gr.update()
+            try:  # Tu dong luu giong vua clone vao kho giong de lan sau chon lai
+                used_name = save_voice_profile(f5_name, f5_sample, used_ref)
+                upd = gr.update(choices=list_voice_profiles(), value=used_name)
+                msg += f" Đã LƯU giọng này vào kho giọng với tên '{used_name}' — lần sau chỉ cần chọn lại ở mục Giọng đã lưu."
+            except Exception:
+                pass
+            return msg, out, upd
         if mode == "xtts":
             out = os.path.join(OUT_DIR, "voice_clone.wav")
             xtts_clone(script, sample, language=clone_lang, out_path=out)
             return ("ĐÃ CLONE XONG VOICE BẰNG XTTS! Lần đầu chạy sẽ tải model khoảng 1,8 GB. "
-                    "Nghe thử bên dưới, rồi sang Bước 4."), out
+                    "Nghe thử bên dưới, rồi sang thẻ 3."), out, gr.update()
         out = os.path.join(OUT_DIR, "voice_elevenlabs.mp3")
         elevenlabs_tts(script, (el_key or "").strip(), (el_voice_id or "").strip(), out_path=out)
-        return "ĐÃ TẠO XONG VOICE BẰNG GIỌNG CLONE ELEVENLABS! Nghe thử bên dưới, rồi sang Bước 4.", out
+        return "ĐÃ TẠO XONG VOICE BẰNG GIỌNG CLONE ELEVENLABS! Nghe thử bên dưới, rồi sang thẻ 3.", out, gr.update()
     except Exception as e:
-        return f"CÓ LỖI: {e}", None
+        return f"CÓ LỖI: {e}", None, gr.update()
 
 
 def step4_srt(voice_file, model_size, max_chars):
@@ -200,6 +210,12 @@ with gr.Blocks(title="Quy trình Video",
                     speed = gr.Slider(-30, 30, value=S.get("speed", 0), step=1, label="Tốc độ (%)", scale=1)
             with gr.Group(visible=S.get("mode") == "f5vi") as grp_f5:
                 with gr.Row():
+                    f5_saved = gr.Dropdown(choices=list_voice_profiles(),
+                                           label="Giọng đã clone đã lưu (chọn là dùng ngay, khỏi tải mẫu lại)", scale=2)
+                    f5_name = gr.Textbox(label="Tên giọng (để lưu vào kho giọng)",
+                                         placeholder="VD: Giọng Nhung bản tin", scale=2)
+                    btn_save_voice = gr.Button("💾 Lưu giọng", size="sm", scale=1)
+                with gr.Row():
                     f5_sample = gr.File(label="File giọng mẫu tiếng Việt 5-15 giây (1 người nói, ít tạp âm)",
                                         file_types=["audio", ".mp3", ".wav", ".m4a"])
                     f5_ref_text = gr.Textbox(
@@ -229,8 +245,30 @@ with gr.Blocks(title="Quy trình Video",
             audio_out = gr.Audio(label="Voice (nghe thử / dùng cho thẻ 3 — hoặc tải file giọng của bạn vào đây)",
                                  type="filepath", value=_saved_audio())
             btn3.click(step3_voice, inputs=[script, mode_dd, voice_dd, speed, sample_up, clone_lang, el_key, el_voice,
-                                            f5_sample, f5_ref_text],
-                       outputs=[status3, audio_out])
+                                            f5_sample, f5_ref_text, f5_name],
+                       outputs=[status3, audio_out, f5_saved])
+
+            def ui_pick_voice(name):
+                if not name:
+                    return gr.update(), gr.update(), gr.update()
+                try:
+                    path, ref = load_voice_profile(name)
+                    return path, ref, name
+                except Exception:
+                    return gr.update(), gr.update(), gr.update()
+
+            def ui_save_voice(name, sample, ref):
+                try:
+                    used = save_voice_profile(name, sample, ref or "")
+                    return (gr.update(choices=list_voice_profiles(), value=used),
+                            f"Đã lưu giọng '{used}' vào kho giọng. Lần sau chỉ cần chọn lại ở mục Giọng đã lưu.")
+                except Exception as e:
+                    return gr.update(), f"Lưu giọng bị lỗi: {e}"
+
+            f5_saved.change(ui_pick_voice, inputs=[f5_saved],
+                            outputs=[f5_sample, f5_ref_text, f5_name])
+            btn_save_voice.click(ui_save_voice, inputs=[f5_name, f5_sample, f5_ref_text],
+                                 outputs=[f5_saved, status3])
 
         with gr.Tab("3 · SRT siêu tốc"):
             with gr.Row():

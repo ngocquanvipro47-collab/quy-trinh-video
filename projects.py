@@ -98,6 +98,49 @@ def save_project(name, state, out_dir):
     return name
 
 
+VOICES_DIR = os.path.join(DATA_DIR, "voices")
+
+
+def list_voice_profiles():
+    """Danh sach giong da clone da luu (moi giong = 1 thu muc trong Data/voices)."""
+    try:
+        names = []
+        for d in os.listdir(VOICES_DIR):
+            if os.path.isfile(os.path.join(VOICES_DIR, d, "info.json")):
+                names.append(d)
+        return sorted(names)
+    except Exception:
+        return []
+
+
+def save_voice_profile(name, sample_path, ref_text):
+    """Luu 1 giong da clone: ban sao file mau + loi thoai cua mau.
+    F5-TTS clone kieu zero-shot nen 'luu giong' = luu cap (mau + loi mau) nay,
+    lan sau chon lai la doc duoc ngay, khoi tai mau lai."""
+    if not sample_path or not os.path.isfile(sample_path):
+        raise RuntimeError("Chưa có file giọng mẫu để lưu.")
+    name = sanitize_name(name) or os.path.splitext(os.path.basename(sample_path))[0]
+    folder = os.path.join(VOICES_DIR, name)
+    os.makedirs(folder, exist_ok=True)
+    base = os.path.basename(sample_path)
+    dest = os.path.join(folder, base)
+    if os.path.abspath(sample_path) != os.path.abspath(dest):
+        shutil.copy2(sample_path, dest)
+    _atomic_write_json(os.path.join(folder, "info.json"), {
+        "name": name, "sample": base, "ref_text": ref_text or "",
+        "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
+    })
+    return name
+
+
+def load_voice_profile(name):
+    """Tra ve (duong dan file mau da luu, loi thoai cua mau)."""
+    folder = os.path.join(VOICES_DIR, name)
+    with open(os.path.join(folder, "info.json"), encoding="utf-8") as f:
+        info = json.load(f)
+    return os.path.join(folder, info["sample"]), info.get("ref_text", "")
+
+
 def load_project(name):
     """Doc du an: tra ve state, voi audio da tro vao ban sao trong thu muc du an."""
     folder = os.path.join(PROJECTS_DIR, name)

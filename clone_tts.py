@@ -202,7 +202,7 @@ def ensure_f5(say=print):
 
 
 def f5_clone(text: str, sample_path: str, ref_text: str = "", out_path: str = None,
-             speed: float = 1.0, say=print) -> str:
+             speed: float = 1.0, say=print, return_ref: bool = False):
     """Clone giong TIENG VIET bang F5-TTS ViVoice, chay offline tren may.
     sample_path: doan giong mau 5-15 giay, 1 nguoi noi, it tap am.
     ref_text: loi thoai dung nguyen van cua doan mau (de trong = tool tu nghe bang Whisper).
@@ -253,6 +253,8 @@ def f5_clone(text: str, sample_path: str, ref_text: str = "", out_path: str = No
     if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
         raise RuntimeError("Clone giong that bai. Hay thu doan giong mau sach hon (it tap am).")
     say("Đã clone xong voice tiếng Việt bằng F5-TTS!")
+    if return_ref:
+        return out_path, ref_text
     return out_path
 
 
