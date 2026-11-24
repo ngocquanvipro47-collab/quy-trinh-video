@@ -203,16 +203,18 @@ def _patch_torchaudio_io():
 
 
 def _maybe_gpu_torch(say):
-    """Neu may co card do hoa nhung PyTorch dang la ban CPU (+cpu, clone rat cham)
-    thi thu nang len ban GPU (cu128) MOT lan duy nhat (co file danh dau de khong
-    thu lai mai). Nang hong thi thoi - van chay CPU duoc."""
+    """Neu PyTorch chua dung duoc card do hoa (ban CPU, hoac ban CUDA khong hop
+    driver) thi thu cai ban cu126 - ban nay hop voi ca driver NVIDIA doi 2024
+    (may Kiu: driver 560.94, ho tro toi CUDA 12.6; ban cu128 doi driver 570+ nen
+    co the cai xong van khong chay duoc GPU). Chi thu 1 lan (file danh dau rieng),
+    cai xong kiem chung bang tien trinh Python moi truoc khi bao khoi dong lai."""
     try:
         import torch
         if torch.cuda.is_available():
             return
     except Exception:
         return
-    marker = os.path.join(os.path.dirname(F5_DIR), ".gpu_torch_tried")
+    marker = os.path.join(os.path.dirname(F5_DIR), ".gpu_torch_tried_cu126")
     if os.path.exists(marker):
         return
     try:
@@ -221,18 +223,27 @@ def _maybe_gpu_torch(say):
             f.write("1")
     except Exception:
         pass
-    say("Máy có vẻ có card đồ họa nhưng PyTorch đang là bản CPU (clone sẽ chậm) — "
-        "tool TỰ NÂNG lên bản GPU giúp bạn (~2-3 GB, chỉ lần này, cần mạng)...")
+    say("PyTorch chưa dùng được card đồ họa (clone bằng CPU rất chậm) — "
+        "tool TỰ CÀI bản GPU cu126 hợp với driver máy bạn (~2-3 GB, chỉ lần này, cần mạng)...")
     import subprocess
     import sys
     proc = subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade",
-                           "--index-url", "https://download.pytorch.org/whl/cu128",
+                           "--index-url", "https://download.pytorch.org/whl/cu126",
                            "torch", "torchaudio"], capture_output=True, text=True)
     if proc.returncode != 0:
-        say("Không nâng được bản GPU (không sao, vẫn chạy bằng CPU được, chỉ chậm hơn). Làm tiếp...")
+        say("Không cài được bản GPU (không sao, vẫn chạy bằng CPU được, chỉ chậm hơn). Làm tiếp...")
         return
-    raise RuntimeError("Đã cài xong PyTorch bản GPU. Hãy TẮT tool rồi MỞ LẠI run.bat, "
-                       "sau đó bấm Tạo voice — từ giờ clone chạy bằng card đồ họa, nhanh hơn nhiều.")
+    # Kiem chung bang tien trinh Python MOI (tien trinh hien tai van dang giu ban torch cu)
+    chk = subprocess.run([sys.executable, "-c",
+                          "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)"],
+                         capture_output=True, text=True)
+    if chk.returncode != 0:
+        say("Đã cài bản GPU nhưng card/driver chưa nhận (có thể cần cập nhật driver NVIDIA). "
+            "Tạm chạy bằng CPU, hơi chậm. Làm tiếp...")
+        return
+    raise RuntimeError("Đã cài xong PyTorch bản GPU (đã kiểm chứng card nhận được). "
+                       "Hãy TẮT tool rồi MỞ LẠI run.bat, sau đó bấm Tạo voice — "
+                       "từ giờ clone chạy bằng card đồ họa, nhanh hơn nhiều.")
 
 
 def ensure_f5(say=print):
